@@ -1,0 +1,354 @@
+<title>ICE Variance Analyzer</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* Layout: a management-accounts working paper — control strip, KPI ledger row, bridge + trend side by side, variance schedule, commentary pad */
+:root{
+  --bg:#f5f7f6; --surface:#ffffff; --ink:#14212b; --muted:#5b6b73; --line:#d9e1df;
+  --accent:#0f5e5a; --accent-soft:#e2efed;
+  --fav:#1d7a46; --fav-soft:#e3f2e8; --adv:#b3261e; --adv-soft:#fbe7e5; --neutral:#8a979c; --neutral-soft:#eef1f1;
+  --f-display:"IBM Plex Sans Condensed","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0e1517; --surface:#152023; --ink:#e4ecea; --muted:#9aaaae; --line:#26363a;
+  --accent:#4fb3aa; --accent-soft:#183331;
+  --fav:#5cc98a; --fav-soft:#173226; --adv:#f07a70; --adv-soft:#3a1d1b; --neutral:#7e8d91; --neutral-soft:#1d2a2d; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1517; --surface:#152023; --ink:#e4ecea; --muted:#9aaaae; --line:#26363a;
+  --accent:#4fb3aa; --accent-soft:#183331;
+  --fav:#5cc98a; --fav-soft:#173226; --adv:#f07a70; --adv-soft:#3a1d1b; --neutral:#7e8d91; --neutral-soft:#1d2a2d; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:14px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:12px;border-bottom:2px solid var(--ink);padding-bottom:12px}
+h1{font-family:var(--f-display);font-weight:700;font-size:1.9rem;letter-spacing:-.01em;margin:0;text-wrap:balance}
+.sub{color:var(--muted);margin:2px 0 0;font-size:.9rem}
+.badge{font-family:var(--f-mono);font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--accent);color:var(--accent);padding:4px 8px;border-radius:3px;background:var(--accent-soft)}
+.controls{display:flex;flex-wrap:wrap;gap:14px 18px;align-items:flex-end;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px}
+.ctl{display:flex;flex-direction:column;gap:4px;min-width:0}
+.ctl label,.lbl{font-size:.7rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:600}
+select,input[type=number]{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:6px 8px;min-width:0}
+input[type=number]{width:110px;font-family:var(--f-mono)}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:4px;overflow:hidden}
+.seg button{font:inherit;border:0;background:var(--bg);color:var(--ink);padding:6px 12px;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--accent);color:var(--surface)}
+.btn{font:inherit;font-weight:600;border:1px solid var(--accent);background:var(--accent);color:var(--surface);padding:7px 14px;border-radius:4px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--accent)}
+.btn:focus-visible,.seg button:focus-visible,select:focus-visible,input:focus-visible,th:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.file{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.status{font-size:.85rem;color:var(--muted)}
+.status.err{color:var(--adv);font-weight:600}
+.note{font-size:.8rem;color:var(--muted);display:flex;gap:8px;align-items:baseline;margin:0}
+.note b{color:var(--accent)}
+.kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;display:flex;flex-direction:column;gap:6px;border-top:3px solid var(--neutral)}
+.kpi.adv{border-top-color:var(--adv)} .kpi.fav{border-top-color:var(--fav)}
+.kpi .val{font-family:var(--f-display);font-size:1.6rem;font-weight:600;font-variant-numeric:tabular-nums}
+.kpi .row{display:flex;justify-content:space-between;font-size:.82rem;color:var(--muted);font-variant-numeric:tabular-nums}
+.kpi .var{font-family:var(--f-mono);font-size:.85rem;font-weight:500}
+.pos{color:var(--fav)} .neg{color:var(--adv)}
+.grid2{display:grid;grid-template-columns:3fr 2fr;gap:12px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px;min-width:0;display:flex;flex-direction:column;gap:10px}
+.panel h2{font-family:var(--f-display);font-size:1.1rem;font-weight:600;margin:0}
+.panel .hint{font-size:.8rem;color:var(--muted);margin:0}
+.chartbox{position:relative;height:300px}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:.86rem}
+th{text-align:left;font-size:.7rem;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:2px solid var(--ink);padding:8px 8px;cursor:pointer;white-space:nowrap;user-select:none}
+th.num,td.num{text-align:right}
+td{padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+td.num{font-family:var(--f-mono);font-size:.82rem}
+tr.material td:first-child{box-shadow:inset 3px 0 0 var(--rowc,transparent)}
+.pill{display:inline-block;font-size:.7rem;font-weight:600;letter-spacing:.04em;padding:2px 8px;border-radius:999px}
+.pill.red{background:var(--adv-soft);color:var(--adv)} .pill.green{background:var(--fav-soft);color:var(--fav)} .pill.grey{background:var(--neutral-soft);color:var(--neutral)}
+.tag{font-size:.68rem;color:var(--accent);background:var(--accent-soft);padding:1px 6px;border-radius:3px;margin-left:6px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:.8rem;color:var(--muted)}
+textarea{width:100%;min-height:260px;font-family:var(--f-mono);font-size:.82rem;line-height:1.55;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:4px;padding:12px;resize:vertical}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+@media (max-width:900px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:1fr}}
+@media (max-width:440px){.kpis{grid-template-columns:1fr}h1{font-size:1.5rem}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>ICE Group Variance Analyzer</h1>
+      <p class="sub">Budget vs actual by division · MUR '000 · Island Cane &amp; Energy Group (fictional training data)</p>
+    </div>
+    <span class="badge" id="srcBadge">Sample data</span>
+  </header>
+
+  <section class="controls" aria-label="Data and filters">
+    <div class="ctl">
+      <span class="lbl">Data</span>
+      <div class="file">
+        <input type="file" id="fileIn" accept=".xlsx,.xls,.csv">
+        <button class="btn ghost" id="sampleBtn" type="button">Load sample data</button>
+      </div>
+    </div>
+    <div class="ctl"><label for="monthSel">Month</label><select id="monthSel"></select></div>
+    <div class="ctl"><span class="lbl">View</span>
+      <div class="seg" role="group" aria-label="Period view"><button type="button" id="vMonth" aria-pressed="true">Month</button><button type="button" id="vYtd" aria-pressed="false">YTD</button></div></div>
+    <div class="ctl"><label for="divSel">Division</label><select id="divSel"></select></div>
+    <div class="ctl"><label for="pctIn">Materiality %</label><input type="number" id="pctIn" value="10" min="0" step="1"></div>
+    <div class="ctl"><label for="absIn">Materiality MUR '000</label><input type="number" id="absIn" value="5000" min="0" step="500"></div>
+    <p class="status" id="status" role="status"></p>
+  </section>
+
+  <p class="note"><b>●</b><span>Calculated in code, not by the AI. Variance = Actual − Budget; a positive variance is favourable for revenue and cost lines alike. A line is material if |variance| ≥ the % threshold <em>or</em> the MUR threshold. Lines with zero budget use the MUR test only.</span></p>
+
+  <section class="kpis" id="kpis" aria-label="Headline figures"></section>
+
+  <section class="grid2">
+    <div class="panel">
+      <h2>EBITDA bridge</h2>
+      <p class="hint" id="bridgeHint">Budget EBITDA to actual EBITDA, material lines shown individually.</p>
+      <div class="chartbox"><canvas id="bridge" aria-label="EBITDA bridge chart" role="img"></canvas></div>
+    </div>
+    <div class="panel">
+      <h2>Monthly EBITDA trend</h2>
+      <p class="hint">Budget vs actual for the selected division filter.</p>
+      <div class="chartbox"><canvas id="trend" aria-label="Monthly EBITDA trend" role="img"></canvas></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="actions" style="justify-content:space-between">
+      <h2>Variance schedule</h2>
+      <div class="legend"><span><span class="pill red">Material A</span></span><span><span class="pill green">Material F</span></span><span><span class="pill grey">Immaterial</span></span><button class="btn ghost" id="csvBtn" type="button">Export flagged CSV</button></div>
+    </div>
+    <div class="tablewrap"><table id="tbl"><thead><tr>
+      <th data-k="div" tabindex="0">Division</th><th data-k="line" tabindex="0">Line item</th>
+      <th class="num" data-k="b" tabindex="0">Budget</th><th class="num" data-k="a" tabindex="0">Actual</th>
+      <th class="num" data-k="v" tabindex="0">Variance</th><th class="num" data-k="p" tabindex="0">Var %</th>
+      <th data-k="fa" tabindex="0">F/(A)</th><th data-k="rag" tabindex="0">RAG</th></tr></thead><tbody></tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="actions" style="justify-content:space-between">
+      <h2>Commentary draft</h2>
+      <div class="actions"><button class="btn" id="draftBtn" type="button">Draft commentary</button><button class="btn ghost" id="copyBtn" type="button">Copy</button><span class="status" id="copyStatus"></span></div>
+    </div>
+    <p class="hint">Numbers are filled in from the schedule. Drivers stay as placeholders until confirmed with each division.</p>
+    <textarea id="comm" aria-label="Commentary draft"></textarea>
+    <textarea id="csvOut" aria-label="CSV export" hidden></textarea>
+  </section>
+</div>
+
+<script>
+const SAMPLE = [["Jan-26","Cane & Sugar","Sugar sales","Revenue",180600,181860],["Feb-26","Cane & Sugar","Sugar sales","Revenue",154800,151120],["Mar-26","Cane & Sugar","Sugar sales","Revenue",129000,127550],["Apr-26","Cane & Sugar","Sugar sales","Revenue",103200,101770],["May-26","Cane & Sugar","Sugar sales","Revenue",77400,78320],["Jun-26","Cane & Sugar","Sugar sales","Revenue",283800,286310],["Jul-26","Cane & Sugar","Sugar sales","Revenue",438600,437900],["Aug-26","Cane & Sugar","Sugar sales","Revenue",490200,488440],["Sep-26","Cane & Sugar","Sugar sales","Revenue",516000,501120],["Jan-26","Cane & Sugar","Molasses sales","Revenue",0,0],["Feb-26","Cane & Sugar","Molasses sales","Revenue",0,0],["Mar-26","Cane & Sugar","Molasses sales","Revenue",0,0],["Apr-26","Cane & Sugar","Molasses sales","Revenue",0,0],["May-26","Cane & Sugar","Molasses sales","Revenue",0,0],["Jun-26","Cane & Sugar","Molasses sales","Revenue",9000,8860],["Jul-26","Cane & Sugar","Molasses sales","Revenue",16200,15390],["Aug-26","Cane & Sugar","Molasses sales","Revenue",18000,16560],["Sep-26","Cane & Sugar","Molasses sales","Revenue",18000,15400],["Jan-26","Cane & Sugar","Cost of cane (planters)","Cost",0,0],["Feb-26","Cane & Sugar","Cost of cane (planters)","Cost",0,0],["Mar-26","Cane & Sugar","Cost of cane (planters)","Cost",0,0],["Apr-26","Cane & Sugar","Cost of cane (planters)","Cost",0,0],["May-26","Cane & Sugar","Cost of cane (planters)","Cost",0,0],["Jun-26","Cane & Sugar","Cost of cane (planters)","Cost",-105000,-106040],["Jul-26","Cane & Sugar","Cost of cane (planters)","Cost",-189000,-181440],["Aug-26","Cane & Sugar","Cost of cane (planters)","Cost",-210000,-197400],["Sep-26","Cane & Sugar","Cost of cane (planters)","Cost",-210000,-192500],["Jan-26","Cane & Sugar","Harvest & transport","Cost",0,0],["Feb-26","Cane & Sugar","Harvest & transport","Cost",0,0],["Mar-26","Cane & Sugar","Harvest & transport","Cost",0,0],["Apr-26","Cane & Sugar","Harvest & transport","Cost",0,0],["May-26","Cane & Sugar","Harvest & transport","Cost",0,0],["Jun-26","Cane & Sugar","Harvest & transport","Cost",-19000,-19100],["Jul-26","Cane & Sugar","Harvest & transport","Cost",-34200,-36250],["Aug-26","Cane & Sugar","Harvest & transport","Cost",-38000,-41040],["Sep-26","Cane & Sugar","Harvest & transport","Cost",-38000,-41900],["Jan-26","Cane & Sugar","Factory processing costs","Cost",-20800,-20840],["Feb-26","Cane & Sugar","Factory processing costs","Cost",-20800,-21290],["Mar-26","Cane & Sugar","Factory processing costs","Cost",-20800,-20670],["Apr-26","Cane & Sugar","Factory processing costs","Cost",-20800,-20850],["May-26","Cane & Sugar","Factory processing costs","Cost",-20800,-21140],["Jun-26","Cane & Sugar","Factory processing costs","Cost",-41600,-41850],["Jul-26","Cane & Sugar","Factory processing costs","Cost",-52000,-52940],["Aug-26","Cane & Sugar","Factory processing costs","Cost",-52000,-52200],["Sep-26","Cane & Sugar","Factory processing costs","Cost",-52000,-53100],["Jan-26","Cane & Sugar","Staff costs","Cost",-44000,-44450],["Feb-26","Cane & Sugar","Staff costs","Cost",-44000,-43000],["Mar-26","Cane & Sugar","Staff costs","Cost",-44000,-43400],["Apr-26","Cane & Sugar","Staff costs","Cost",-44000,-43540],["May-26","Cane & Sugar","Staff costs","Cost",-44000,-43080],["Jun-26","Cane & Sugar","Staff costs","Cost",-44000,-43410],["Jul-26","Cane & Sugar","Staff costs","Cost",-44000,-43120],["Aug-26","Cane & Sugar","Staff costs","Cost",-44000,-43510],["Sep-26","Cane & Sugar","Staff costs","Cost",-44000,-45200],["Jan-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",0,0],["Feb-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",0,0],["Mar-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",0,0],["Apr-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",0,0],["May-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",0,0],["Jun-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",12000,12260],["Jul-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",21600,20740],["Aug-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",24000,22560],["Sep-26","Cane & Sugar","Bagasse sold to Energy (IC)","Revenue",24000,21800],["Jan-26","Energy","Electricity sales","Revenue",401700,395090],["Feb-26","Energy","Electricity sales","Revenue",397800,402360],["Mar-26","Energy","Electricity sales","Revenue",390000,383440],["Apr-26","Energy","Electricity sales","Revenue",378300,376020],["May-26","Energy","Electricity sales","Revenue",374400,383560],["Jun-26","Energy","Electricity sales","Revenue",382200,384880],["Jul-26","Energy","Electricity sales","Revenue",390000,391110],["Aug-26","Energy","Electricity sales","Revenue",390000,393600],["Sep-26","Energy","Electricity sales","Revenue",390000,380250],["Jan-26","Energy","Coal costs","Cost",-212800,-216450],["Feb-26","Energy","Coal costs","Cost",-212800,-215740],["Mar-26","Energy","Coal costs","Cost",-212800,-209920],["Apr-26","Energy","Coal costs","Cost",-212800,-207820],["May-26","Energy","Coal costs","Cost",-212800,-210840],["Jun-26","Energy","Coal costs","Cost",-156100,-154290],["Jul-26","Energy","Coal costs","Cost",-134800,-142890],["Aug-26","Energy","Coal costs","Cost",-134800,-149630],["Sep-26","Energy","Coal costs","Cost",-141900,-168630],["Jan-26","Energy","Bagasse purchased from Sugar (IC)","Cost",0,0],["Feb-26","Energy","Bagasse purchased from Sugar (IC)","Cost",0,0],["Mar-26","Energy","Bagasse purchased from Sugar (IC)","Cost",0,0],["Apr-26","Energy","Bagasse purchased from Sugar (IC)","Cost",0,0],["May-26","Energy","Bagasse purchased from Sugar (IC)","Cost",0,0],["Jun-26","Energy","Bagasse purchased from Sugar (IC)","Cost",-12000,-11980],["Jul-26","Energy","Bagasse purchased from Sugar (IC)","Cost",-21600,-20740],["Aug-26","Energy","Bagasse purchased from Sugar (IC)","Cost",-24000,-22560],["Sep-26","Energy","Bagasse purchased from Sugar (IC)","Cost",-24000,-21800],["Jan-26","Energy","Maintenance & repairs","Cost",-18000,-18060],["Feb-26","Energy","Maintenance & repairs","Cost",-18000,-17790],["Mar-26","Energy","Maintenance & repairs","Cost",-18000,-18080],["Apr-26","Energy","Maintenance & repairs","Cost",-18000,-18360],["May-26","Energy","Maintenance & repairs","Cost",-18000,-17910],["Jun-26","Energy","Maintenance & repairs","Cost",-18000,-17750],["Jul-26","Energy","Maintenance & repairs","Cost",-18000,-18450],["Aug-26","Energy","Maintenance & repairs","Cost",-18000,-18540],["Sep-26","Energy","Maintenance & repairs","Cost",-18000,-24300],["Jan-26","Energy","Staff costs","Cost",-16500,-16160],["Feb-26","Energy","Staff costs","Cost",-16500,-16130],["Mar-26","Energy","Staff costs","Cost",-16500,-16180],["Apr-26","Energy","Staff costs","Cost",-16500,-16610],["May-26","Energy","Staff costs","Cost",-16500,-16740],["Jun-26","Energy","Staff costs","Cost",-16500,-16440],["Jul-26","Energy","Staff costs","Cost",-16500,-16140],["Aug-26","Energy","Staff costs","Cost",-16500,-16400],["Sep-26","Energy","Staff costs","Cost",-16500,-16900],["Jan-26","Property","Land sales","Revenue",0,0],["Feb-26","Property","Land sales","Revenue",0,0],["Mar-26","Property","Land sales","Revenue",30000,32000],["Apr-26","Property","Land sales","Revenue",0,0],["May-26","Property","Land sales","Revenue",0,0],["Jun-26","Property","Land sales","Revenue",25000,25000],["Jul-26","Property","Land sales","Revenue",0,0],["Aug-26","Property","Land sales","Revenue",0,0],["Sep-26","Property","Land sales","Revenue",45000,0],["Jan-26","Property","Cost of land sold","Cost",0,0],["Feb-26","Property","Cost of land sold","Cost",0,0],["Mar-26","Property","Cost of land sold","Cost",-8001,-8534],["Apr-26","Property","Cost of land sold","Cost",0,0],["May-26","Property","Cost of land sold","Cost",0,0],["Jun-26","Property","Cost of land sold","Cost",-6668,-6668],["Jul-26","Property","Cost of land sold","Cost",0,0],["Aug-26","Property","Cost of land sold","Cost",0,0],["Sep-26","Property","Cost of land sold","Cost",-12000,0],["Jan-26","Property","Rental income","Revenue",9500,9740],["Feb-26","Property","Rental income","Revenue",9500,9510],["Mar-26","Property","Rental income","Revenue",9500,9720],["Apr-26","Property","Rental income","Revenue",9500,9670],["May-26","Property","Rental income","Revenue",9500,9270],["Jun-26","Property","Rental income","Revenue",9500,9600],["Jul-26","Property","Rental income","Revenue",9500,9590],["Aug-26","Property","Rental income","Revenue",9500,9520],["Sep-26","Property","Rental income","Revenue",9500,9900],["Jan-26","Property","Development & admin costs","Cost",-7200,-7120],["Feb-26","Property","Development & admin costs","Cost",-7200,-7250],["Mar-26","Property","Development & admin costs","Cost",-7200,-7060],["Apr-26","Property","Development & admin costs","Cost",-7200,-7180],["May-26","Property","Development & admin costs","Cost",-7200,-7180],["Jun-26","Property","Development & admin costs","Cost",-7200,-7360],["Jul-26","Property","Development & admin costs","Cost",-7200,-7340],["Aug-26","Property","Development & admin costs","Cost",-7200,-7110],["Sep-26","Property","Development & admin costs","Cost",-7200,-7050],["Jan-26","Corporate","Head office admin","Cost",-14000,-14000],["Feb-26","Corporate","Head office admin","Cost",-14000,-13780],["Mar-26","Corporate","Head office admin","Cost",-14000,-14290],["Apr-26","Corporate","Head office admin","Cost",-14000,-14260],["May-26","Corporate","Head office admin","Cost",-14000,-13860],["Jun-26","Corporate","Head office admin","Cost",-14000,-14100],["Jul-26","Corporate","Head office admin","Cost",-14000,-14080],["Aug-26","Corporate","Head office admin","Cost",-14000,-13760],["Sep-26","Corporate","Head office admin","Cost",-14000,-14600],["Jan-26","Corporate","IT & ERP project","Cost",-3500,-3550],["Feb-26","Corporate","IT & ERP project","Cost",-3500,-3510],["Mar-26","Corporate","IT & ERP project","Cost",-3500,-3550],["Apr-26","Corporate","IT & ERP project","Cost",-3500,-3510],["May-26","Corporate","IT & ERP project","Cost",-3500,-3410],["Jun-26","Corporate","IT & ERP project","Cost",-3500,-3470],["Jul-26","Corporate","IT & ERP project","Cost",-3500,-4200],["Aug-26","Corporate","IT & ERP project","Cost",-3500,-4900],["Sep-26","Corporate","IT & ERP project","Cost",-3500,-6200],["Jan-26","Corporate","Professional fees","Cost",-2800,-2850],["Feb-26","Corporate","Professional fees","Cost",-2800,-2850],["Mar-26","Corporate","Professional fees","Cost",-2800,-2770],["Apr-26","Corporate","Professional fees","Cost",-2800,-2740],["May-26","Corporate","Professional fees","Cost",-2800,-2850],["Jun-26","Corporate","Professional fees","Cost",-2800,-2860],["Jul-26","Corporate","Professional fees","Cost",-2800,-2740],["Aug-26","Corporate","Professional fees","Cost",-2800,-2800],["Sep-26","Corporate","Professional fees","Cost",-2800,-2900],["Jan-26","Corporate","FX gain / (loss)","Other",0,1200],["Feb-26","Corporate","FX gain / (loss)","Other",0,-800],["Mar-26","Corporate","FX gain / (loss)","Other",0,400],["Apr-26","Corporate","FX gain / (loss)","Other",0,-1500],["May-26","Corporate","FX gain / (loss)","Other",0,600],["Jun-26","Corporate","FX gain / (loss)","Other",0,-2100],["Jul-26","Corporate","FX gain / (loss)","Other",0,-3300],["Aug-26","Corporate","FX gain / (loss)","Other",0,-4800],["Sep-26","Corporate","FX gain / (loss)","Other",0,-11400],["Jan-26","All","Depreciation","Below EBITDA",-51000,-49900],["Feb-26","All","Depreciation","Below EBITDA",-51000,-51660],["Mar-26","All","Depreciation","Below EBITDA",-51000,-51680],["Apr-26","All","Depreciation","Below EBITDA",-51000,-50050],["May-26","All","Depreciation","Below EBITDA",-51000,-50940],["Jun-26","All","Depreciation","Below EBITDA",-51000,-51130],["Jul-26","All","Depreciation","Below EBITDA",-51000,-50400],["Aug-26","All","Depreciation","Below EBITDA",-51000,-51950],["Sep-26","All","Depreciation","Below EBITDA",-51000,-51000],["Jan-26","All","Finance costs","Below EBITDA",-28000,-27890],["Feb-26","All","Finance costs","Below EBITDA",-28000,-27600],["Mar-26","All","Finance costs","Below EBITDA",-28000,-28060],["Apr-26","All","Finance costs","Below EBITDA",-28000,-28320],["May-26","All","Finance costs","Below EBITDA",-28000,-27580],["Jun-26","All","Finance costs","Below EBITDA",-28000,-27740],["Jul-26","All","Finance costs","Below EBITDA",-28000,-28690],["Aug-26","All","Finance costs","Below EBITDA",-28000,-28210],["Sep-26","All","Finance costs","Below EBITDA",-28000,-29100]];
+const COLS = ["Month","Division","Line item","Type","Budget","Actual"];
+const S = { rows: [], months: [], month: null, view: "month", div: "All", sort: { k: "rag", dir: 1 } };
+const $ = id => document.getElementById(id);
+const fmt = n => { const r = Math.round(n); const s = Math.abs(r).toLocaleString("en-US"); return r < 0 ? `(${s})` : s; };
+const fmtSigned = n => (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(Math.round(n)).toLocaleString("en-US");
+const pctTxt = p => p === null ? "n/a" : (p * 100).toFixed(1) + "%";
+const mStr = n => (n / 1000).toFixed(1);
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function loadRows(arr, label) {
+  S.rows = arr.map(r => ({ month: String(r[0]).trim(), div: String(r[1]).trim(), line: String(r[2]).trim(), type: String(r[3]).trim(), b: +r[4] || 0, a: +r[5] || 0 }));
+  S.months = [...new Set(S.rows.map(r => r.month))];
+  S.month = S.months[S.months.length - 1];
+  $("monthSel").innerHTML = S.months.map(m => `<option>${m}</option>`).join("");
+  $("monthSel").value = S.month;
+  const divs = ["All", ...new Set(S.rows.map(r => r.div))];
+  $("divSel").innerHTML = divs.map(d => `<option>${d}</option>`).join("");
+  S.div = "All"; $("divSel").value = "All";
+  $("srcBadge").textContent = label;
+  $("comm").value = "";
+  render();
+}
+
+function parseSheet(ws) {
+  const json = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null });
+  for (let i = 0; i < Math.min(json.length, 10); i++) {
+    const hdr = (json[i] || []).map(h => h === null ? "" : String(h).trim().toLowerCase());
+    const idx = COLS.map(c => hdr.indexOf(c.toLowerCase()));
+    if (idx.every(x => x >= 0)) return json.slice(i + 1).filter(r => r && r[idx[0]] !== null && r[idx[0]] !== "").map(r => idx.map(x => r[x]));
+  }
+  return null;
+}
+
+$("fileIn").addEventListener("change", e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = ev => {
+    try {
+      const wb = XLSX.read(new Uint8Array(ev.target.result), { type: "array" });
+      const names = wb.SheetNames.includes("Monthly_Detail") ? ["Monthly_Detail", ...wb.SheetNames.filter(n => n !== "Monthly_Detail")] : wb.SheetNames;
+      let rows = null, used = "";
+      for (const n of names) { rows = parseSheet(wb.Sheets[n]); if (rows && rows.length) { used = n; break; } }
+      if (!rows || !rows.length) { setStatus(`No sheet in "${f.name}" has the columns ${COLS.join(", ")}. Add a sheet with those headers (e.g. Monthly_Detail) and upload again.`, true); return; }
+      loadRows(rows, f.name);
+      setStatus(`Loaded ${rows.length} rows from sheet "${used}".`);
+    } catch (err) { setStatus(`Could not read "${f.name}": ${err.message}. Upload an .xlsx or .csv file.`, true); }
+  };
+  rd.readAsArrayBuffer(f);
+});
+function setStatus(t, err) { $("status").textContent = t; $("status").className = "status" + (err ? " err" : ""); }
+
+function periodRows() {
+  const mi = S.months.indexOf(S.month);
+  const inPeriod = S.view === "month" ? m => m === S.month : m => S.months.indexOf(m) <= mi && S.months.indexOf(m) >= 0;
+  const map = new Map();
+  for (const r of S.rows) {
+    if (!inPeriod(r.month) || (S.div !== "All" && r.div !== S.div)) continue;
+    const k = r.div + "|" + r.line;
+    if (!map.has(k)) map.set(k, { div: r.div, line: r.line, type: r.type, b: 0, a: 0 });
+    const o = map.get(k); o.b += r.b; o.a += r.a;
+  }
+  const pctT = (+$("pctIn").value || 0) / 100, absT = +$("absIn").value || 0;
+  return [...map.values()].map(o => {
+    o.v = o.a - o.b;
+    o.p = o.b === 0 ? null : o.v / Math.abs(o.b);
+    o.material = o.v !== 0 && (Math.abs(o.v) >= absT || (o.p !== null && Math.abs(o.p) >= pctT));
+    o.fa = o.v > 0 ? "F" : o.v < 0 ? "A" : "–";
+    o.rag = !o.material ? "grey" : o.v < 0 ? "red" : "green";
+    o.ic = /\(IC\)/.test(o.line);
+    return o;
+  });
+}
+const sum = (rs, f, k) => rs.filter(f).reduce((s, r) => s + r[k], 0);
+const isEbitda = r => r.type !== "Below EBITDA";
+
+function render() {
+  if (!S.rows.length) return;
+  const rs = periodRows();
+  const cards = [
+    ["Revenue", r => r.type === "Revenue"],
+    ["Total costs", r => r.type === "Cost"],
+    ["EBITDA", isEbitda],
+    ["Net result", () => true]
+  ];
+  $("kpis").innerHTML = cards.map(([name, f]) => {
+    const b = sum(rs, f, "b"), a = sum(rs, f, "a"), v = a - b, p = b === 0 ? null : v / Math.abs(b);
+    return `<article class="kpi ${v < 0 ? "adv" : v > 0 ? "fav" : ""}"><span class="lbl">${name}</span><span class="val">${fmt(a)}</span>
+      <span class="row"><span>Budget ${fmt(b)}</span><span class="var ${v < 0 ? "neg" : "pos"}">${fmtSigned(v)} · ${pctTxt(p)}</span></span></article>`;
+  }).join("");
+  renderTable(rs); renderBridge(rs); renderTrend();
+  const per = S.view === "month" ? S.month : "YTD " + S.month;
+  $("bridgeHint").textContent = `${per} · ${S.div === "All" ? "Group" : S.div} · budget EBITDA to actual EBITDA, material lines shown individually.`;
+}
+
+function renderTable(rs) {
+  const order = { red: 0, green: 1, grey: 2 };
+  const { k, dir } = S.sort;
+  const sorted = [...rs].sort((x, y) => {
+    let c;
+    if (k === "rag") c = order[x.rag] - order[y.rag] || Math.abs(y.v) - Math.abs(x.v);
+    else if (k === "p") c = (x.p ?? -Infinity) - (y.p ?? -Infinity);
+    else if (["b", "a", "v"].includes(k)) c = x[k] - y[k];
+    else c = String(x[k]).localeCompare(String(y[k]));
+    return c * dir;
+  });
+  const lbl = { red: "Material A", green: "Material F", grey: "Immaterial" };
+  $("tbl").querySelector("tbody").innerHTML = sorted.map(r => `<tr class="${r.material ? "material" : ""}" style="--rowc:var(${r.rag === "red" ? "--adv" : "--fav"})">
+    <td>${r.div}</td><td>${r.line}${r.ic ? '<span class="tag">eliminates on consolidation</span>' : ""}</td>
+    <td class="num">${fmt(r.b)}</td><td class="num">${fmt(r.a)}</td><td class="num ${r.v < 0 ? "neg" : r.v > 0 ? "pos" : ""}">${fmtSigned(r.v)}</td>
+    <td class="num">${pctTxt(r.p)}</td><td>${r.fa}</td><td><span class="pill ${r.rag}">${lbl[r.rag]}</span></td></tr>`).join("");
+}
+document.querySelectorAll("#tbl th").forEach(th => {
+  const go = () => { const k = th.dataset.k; S.sort = { k, dir: S.sort.k === k ? -S.sort.dir : (["b","a","v","p"].includes(k) ? -1 : 1) }; render(); };
+  th.addEventListener("click", go); th.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+});
+
+let bridgeChart, trendChart;
+function chartDefaults() {
+  Chart.defaults.font.family = css("--f-body").split(",")[0].replace(/"/g, "") || "sans-serif";
+  Chart.defaults.color = css("--muted");
+  Chart.defaults.borderColor = css("--line");
+}
+function renderBridge(rs) {
+  chartDefaults();
+  const eb = rs.filter(isEbitda);
+  const bE = sum(eb, () => true, "b"), aE = sum(eb, () => true, "a");
+  const mat = eb.filter(r => r.material).sort((x, y) => x.v - y.v);
+  const other = eb.filter(r => !r.material).reduce((s, r) => s + r.v, 0);
+  const steps = [...mat.map(r => [r.line.replace(" (IC)", ""), r.v]), ...(Math.round(other) !== 0 ? [["Other (immaterial)", other]] : [])];
+  const labels = ["Budget EBITDA", ...steps.map(s => s[0]), "Actual EBITDA"];
+  const data = [[0, bE]], colors = [css("--accent")];
+  let run = bE;
+  for (const [, v] of steps) { data.push([run, run + v]); colors.push(v < 0 ? css("--adv") : css("--fav")); run += v; }
+  data.push([0, aE]); colors.push(css("--accent"));
+  const deltas = [bE, ...steps.map(s => s[1]), aE];
+  if (bridgeChart) bridgeChart.destroy();
+  bridgeChart = new Chart($("bridge"), {
+    type: "bar",
+    data: { labels, datasets: [{ data, backgroundColor: colors, borderRadius: 2, barPercentage: .8 }] },
+    options: { maintainAspectRatio: false, animation: false, plugins: { legend: { display: false },
+      tooltip: { callbacks: { label: c => (c.dataIndex === 0 || c.dataIndex === labels.length - 1 ? "" : "Variance ") + fmtSigned(deltas[c.dataIndex]) } } },
+      scales: { x: { ticks: { maxRotation: 60, minRotation: 40, autoSkip: false, font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { callback: v => (v / 1000).toLocaleString("en-US") + "m" } } } }
+  });
+}
+function renderTrend() {
+  const f = r => (S.div === "All" || r.div === S.div) && isEbitda(r);
+  const bs = S.months.map(m => S.rows.filter(r => r.month === m && f(r)).reduce((s, r) => s + r.b, 0));
+  const as = S.months.map(m => S.rows.filter(r => r.month === m && f(r)).reduce((s, r) => s + r.a, 0));
+  if (trendChart) trendChart.destroy();
+  trendChart = new Chart($("trend"), {
+    type: "line",
+    data: { labels: S.months, datasets: [
+      { label: "Budget", data: bs, borderColor: css("--neutral"), borderDash: [5, 4], pointRadius: 2, tension: .2 },
+      { label: "Actual", data: as, borderColor: css("--accent"), backgroundColor: css("--accent-soft"), fill: true, pointRadius: S.months.map(m => m === S.month ? 5 : 2), tension: .2 } ] },
+    options: { maintainAspectRatio: false, animation: false, plugins: { legend: { position: "bottom" }, tooltip: { callbacks: { label: c => `${c.dataset.label} ${fmt(c.raw)}` } } },
+      scales: { y: { ticks: { callback: v => (v / 1000).toLocaleString("en-US") + "m" } }, x: { grid: { display: false } } } }
+  });
+}
+
+$("draftBtn").addEventListener("click", () => {
+  const rs = periodRows(); const eb = rs.filter(isEbitda);
+  const bE = sum(eb, () => true, "b"), aE = sum(eb, () => true, "a"), v = aE - bE;
+  const per = S.view === "month" ? S.month : "YTD to " + S.month;
+  const scope = S.div === "All" ? "Group" : S.div;
+  const lines = [`${scope} commentary — ${per} (MUR m; F = favourable, (A) = adverse)`, "",
+    `HEADLINE: ${scope} EBITDA of MUR ${mStr(aE)}m vs budget MUR ${mStr(bE)}m, ${v >= 0 ? "MUR " + mStr(v) + "m F" : "(MUR " + mStr(-v) + "m) A"} (${pctTxt(bE ? v / Math.abs(bE) : null)}). [Headline driver — to confirm]`, ""];
+  const mat = rs.filter(r => r.material).sort((x, y) => Math.abs(y.v) - Math.abs(x.v));
+  const byDiv = {};
+  mat.forEach(r => (byDiv[r.div] = byDiv[r.div] || []).push(r));
+  for (const [d, items] of Object.entries(byDiv)) {
+    lines.push(d.toUpperCase());
+    for (const r of items) {
+      const amt = r.v >= 0 ? `MUR ${mStr(r.v)}m F` : `(MUR ${mStr(-r.v)}m) A`;
+      lines.push(`• ${r.line}: actual ${mStr(r.a)}m vs budget ${mStr(r.b)}m → ${amt}${r.p === null ? " (no budget — absolute test)" : ` (${pctTxt(r.p)})`}${r.ic ? " — intercompany, eliminates on consolidation" : ""}`);
+      lines.push(`   Driver: [driver — to confirm with ${d}]`);
+      lines.push(`   Impact: ${amt} on ${scope.toLowerCase()} EBITDA${r.type === "Below EBITDA" ? " (below EBITDA line)" : ""}.`);
+      lines.push(`   Action: [owner / next step — to confirm]`);
+    }
+    lines.push("");
+  }
+  if (!mat.length) lines.push("No variances breach the materiality thresholds.");
+  lines.push(`Thresholds: ≥ ${$("pctIn").value}% or ≥ MUR ${(+$("absIn").value).toLocaleString("en-US")}k. All figures calculated in code from the uploaded data.`);
+  $("comm").value = lines.join("\n");
+});
+$("copyBtn").addEventListener("click", () => {
+  const t = $("comm").value; if (!t) { $("copyStatus").textContent = "Draft the commentary first."; return; }
+  navigator.clipboard.writeText(t).then(() => $("copyStatus").textContent = "Copied", () => { $("comm").select(); $("copyStatus").textContent = "Selected. Press Ctrl/Cmd+C to copy."; });
+});
+$("csvBtn").addEventListener("click", () => {
+  const rs = periodRows().filter(r => r.material);
+  const q = s => `"${String(s).replace(/"/g, '""')}"`;
+  const csv = ["Period,Division,Line item,Budget,Actual,Variance,Var %,F/A", ...rs.map(r => [S.view === "month" ? S.month : "YTD " + S.month, r.div, r.line, r.b, r.a, r.v, r.p === null ? "n/a" : (r.p * 100).toFixed(1), r.fa].map(q).join(","))].join("\n");
+  const ta = $("csvOut"); ta.hidden = false; ta.value = csv; ta.select();
+  navigator.clipboard.writeText(csv).then(() => setStatus(`Copied ${rs.length} flagged rows as CSV — paste into Excel.`), () => setStatus(`CSV for ${rs.length} flagged rows is selected below — press Ctrl/Cmd+C.`));
+});
+
+$("sampleBtn").addEventListener("click", () => { loadRows(SAMPLE, "Sample data"); setStatus("Loaded the ICE Group sample (Jan–Sep 2026)."); });
+$("monthSel").addEventListener("change", e => { S.month = e.target.value; render(); });
+$("divSel").addEventListener("change", e => { S.div = e.target.value; render(); });
+["pctIn", "absIn"].forEach(id => $(id).addEventListener("input", render));
+$("vMonth").addEventListener("click", () => { S.view = "month"; $("vMonth").setAttribute("aria-pressed", "true"); $("vYtd").setAttribute("aria-pressed", "false"); render(); });
+$("vYtd").addEventListener("click", () => { S.view = "ytd"; $("vYtd").setAttribute("aria-pressed", "true"); $("vMonth").setAttribute("aria-pressed", "false"); render(); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", render);
+new MutationObserver(render).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+loadRows(SAMPLE, "Sample data");
+</script>
